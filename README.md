@@ -2,10 +2,6 @@ K8S cluster provision with kops, demo blue-green deployment and stateful databas
 
 # Pre-Requirement
 
-## Dependencies:
-
-You have pre-install `kubectl`
-
 ## IAM
 You have to create an IAM role on AWS to use as IAM instance role for the server.
 This IAM role need these IAM permissions:
@@ -40,7 +36,7 @@ Creata a file call `env.sh` to your preference from the template `env.sh.templat
 
 ```
 source env.sh
-make deps # install dependencies
+make deps # install dependencies include: kubectl and kops
 make up # bring up cluster on AWS
 ```
 
