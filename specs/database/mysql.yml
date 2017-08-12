@@ -1,0 +1,52 @@
+---
+# Config Map
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+data:
+  master.cnf: |
+    # Apply this config only on the master.
+    [mysqld]
+    server-id=1
+    binlog-format   = mixed
+    log-bin=mysql-bin
+    datadir=/var/lib/mysql
+    innodb_flush_log_at_trx_commit=1
+    sync_binlog=1
+
+# Service for master pod. The app should connect to route
+# write to head.
+# Since we are using a single pod, we can put both of read/write here
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+  selector:
+    app: mysql
+
+---
+# Client service for connecting to any MySQL instance for reads.
+# We can use this to conect directly to slave pods
+# when configuring slave
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-secondary
+  labels:
+    app: mysql-secondary
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+  selector:
+    app: mysql-secondary

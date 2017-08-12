@@ -106,7 +106,7 @@ $ kubectl run -it --rm cli --image byrnedo/alpine-curl  --restart=Never -- 100.6
 GREEN
 ```
 
-Awesone, it switchs to **BLUE**. Now it has error, we can immediately rollback:
+Awesone, it switchs to **GREEN**. If it has error, we can immediately rollback:
 
 ```
 $ make switch
@@ -114,7 +114,7 @@ $ kubectl run -it --rm cli --image byrnedo/alpine-curl  --restart=Never -- 100.6
 BLUE
 ```
 
-We can repeast this process for next deployment:
+We can repeast this process for next deployment as much as we want
 
 ```
 make deploy # default color=blue without specifiyicng
@@ -123,24 +123,65 @@ make switch
 
 # Stateful database
 
-The basic idea is that we will use *Service* with a specific selector.
+The basic idea is that we will use *Service* with a specific selector 
+to select pods.
+
 Then we run a MySQL pod with that selector as its label, we enable binlog
 on this MySQL container. We consider this the primary server.
 
-When we need to upgrade the database, we simply create another container,
-configure it to be replicated from above master, make it effectively become
-secondary. Until the data is up to day, and secondary keeps up with the primary.
-We can temporarily take the app down or set the app in read-only mode to prevent
-write.
+When we need to upgrade the database, we follow this process:
 
-Then we do 3 things:
+- Create another MySQL pod, configure it to be replicated from above master,
+  make it effectively become secondary.
+- Wait till this secondary as up-to-date data with master
+- Then start downtime:
 
-- Change the label of primary pod to something else.
-- Promote slave to primary
-- Change the label of the slave(which is a standalone primary now) to the selector
-that we config on service
+  - Temporarily take the app down or set the app in read-only mode to prevent write.
+  - Change selector of MySQL service to match the label of this new pod
+- Finish downtime, switching to new db server is done
 
 This way the downtime is minimal and if anything occurs, we can still rollback to old
-primary database.
+primary database. The IP address is also remain same.
 
-## Try out
+## Bring up db
+
+We will create ebs volume first, and use it as param for next command
+
+```
+make ebs # note volume id
+make db EBS_VOLUME=[volume-id-from-above]
+```
+
+Once the pod are ready, we can connect to its MySQL shell:
+
+```
+make mysql_shell
+```
+
+## Upgrade process
+
+1. Bring up slave
+
+   ```
+   mak ebs # note volume id or we can re-use any existing volume id
+   make secondary_db EBS_VOLUME=[ebs-volume-id]
+   # Manually connect to this pod and setup replication.
+   # We can do some more work do automate this further without human intervention
+   # Ideally, we can use mysqldump to backup data, find the MASTER_LOG_POS from dump file
+   # then import data into this new slave pod, and issue change master command from above MASTER_LOG_POS
+   # CHANGE MASTER TO MASTER_HOST='USING_SERVICE_IP_ADDRESS',MASTER_USER='replicant',MASTER_PASSWORD='<<slave-server-password>>', MASTER_LOG_FILE='<<value from dump file>>', MASTER_LOG_POS=<<value from dump file>>;
+   # START_SLAVE'
+   ```
+
+2. Switch Over
+
+This is the amount of time we are down
+
+		```
+		# 1. Stop the app or put it into READ-ONLY mode
+    # Promote slave to master and switch mysql selector to the slave(new master) StatefulSet
+    make promote_db
+		```
+
+The migration process is finished. Downtime is the amount of time to promoting and change selector. Which is usually
+a few seconds.

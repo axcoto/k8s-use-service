@@ -92,6 +92,25 @@ switch:
 
 .PHONY: db
 db:
-	kubectl create -f specs/database/mysql-configmap.yml
-	kubectl create -f specs/database/mysql-service.yml
-	kubectl create -f specs/database/mysql-statefulset.yml
+	kubectl create -f specs/database/mysql.yml 2>/dev/null || true
+	@sleep 3
+	kubectl get services | grep -q mysql
+	kubectl create -f specs/database/mysql-master.yml
+
+secondary_db:
+	kubectl create -f specs/database/mysql-secondary.yml
+
+# Promote pod into master
+# Change labl
+promote_db:
+	$(eval MYSQL_HOST := $(shell kubectl get services mysql-secondary | tail -n1 | awk '{print $$2}'))
+	kubectl run -it --rm --image=mysql:5.7 --restart=Never mysql-cli -- mysql -h $(MYSQL_HOST) -e "STOP SLAVE; RESET MASTER;"
+	kubectl patch services mysql -p '{"spec":{"selector":{"app":"mysql-secondary"}}}'
+
+# Create an interaction shell with node in cluster
+shell:
+	kubectl run -it --rm shell --image busybox  --restart=Never -- sh
+mysql_shell:
+	$(eval MYSQL_HOST := $(shell kubectl get services mysql | tail -n1 | awk '{print $$2}'))
+	kubectl run --image=mysql:5.7 -i -t --rm --restart=Never cli -- mysql -h $(MYSQL_HOST)
+
