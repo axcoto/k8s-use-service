@@ -62,7 +62,7 @@ up: check_requirement create_bucket
 
 
 destroy:
-	bash -c 'source env.run; ./bin/mac/kops delete cluster "$$CLUSTER_NAME" --yes'
+	bash -c 'source env.sh; ./bin/mac/kops delete cluster "$$CLUSTER_NAME" --yes'
 
 # Create configmape for nginx
 config_map:
