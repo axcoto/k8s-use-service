@@ -34,11 +34,14 @@ Creata a file call `env.sh` to your preference from the template `env.sh.templat
 
 # Step 2: Bring up cluster
 
+You should alwyays source `env.sh` before running any `make` command of this repository.
+
 ```
 source env.sh
 make deps # install dependencies include: kubectl and kops
 make up # bring up cluster on AWS
 ```
+
 
 This will run for awhile and take couple of minute for clustet to come up
 
@@ -114,13 +117,6 @@ $ kubectl run -it --rm cli --image byrnedo/alpine-curl  --restart=Never -- 100.6
 BLUE
 ```
 
-We can repeast this process for next deployment as much as we want
-
-```
-make deploy # default color=blue without specifiyicng
-make switch
-```
-
 # Stateful database
 
 The basic idea is that we will use *Service* with a specific selector 
@@ -138,10 +134,11 @@ When we need to upgrade the database, we follow this process:
 
   - Temporarily take the app down or set the app in read-only mode to prevent write.
   - Change selector of MySQL service to match the label of this new pod
+
 - Finish downtime, switching to new db server is done
 
 This way the downtime is minimal and if anything occurs, we can still rollback to old
-primary database. The IP address is also remain same.
+primary database. The IP address also remains same.
 
 ## Bring up db
 
@@ -187,39 +184,39 @@ mysql> select @@hostname;
 
 2. Setup replication on secondary db
 
-It's possible to automate this process but for now, we do it manually. We also
-skip initialize steps to dumb data and sync to master.
+		It's possible to automate this process but for now, we do it manually. We also
+		skip initialize steps to dumb data and sync to master.
 
-	 ```
-	 $ kubectl get pods | grep mysql
-		 mysql-0                                   1/1       Running   0          48m
-		 mysql-secondary-0                         1/1       Running   0          8m
-   # Ensure both are in running state
-   $ make config_slave # this will setup replication for secondary StatefulSet
-   ```
+		 ```
+		 # Ensure both are in running state
+		 $ kubectl get pods | grep mysql
+			 mysql-0                                   1/1       Running   0          48m
+			 mysql-secondary-0                         1/1       Running   0          8m
+		 $ make config_slave # this will setup replication for secondary StatefulSet
+		 ```
 
-Wait until slave keep up with master (second_behind_master=0) and has no replication error.
+		Wait until slave keep up with master (second_behind_master=0) and has no replication error.
 
 3. Switch Over
 
-This is when downtime happen. We need to stop the app or put it into READ-ONLY mode
-Then promote slave to master and switch mysql service selector to the label of 
-secondary StatefulSet
+		This is when downtime happen. We need to stop the app or put it into READ-ONLY mode
+		Then promote slave to master and switch mysql service selector to the label of 
+		secondary StatefulSet
 
 		```
     $ make promote_db
 		```
 
-The migration process is finished. Downtime is the amount of time to promoting and change selector. Which is usually
-a few seconds.
+		The migration process is finished. Downtime is the amount of time to promoting and change selector. Which is usually
+		a few seconds.
 
-We can check the selector of mysql service now
+		We can check the selector of mysql service now
 
 		```
 	  $ kubectl describe services mysql
     ```
 
-We can verify if new node as well:
+		We can verify if new node as well:
 
 		```
 		make mysql_shell
