@@ -145,17 +145,29 @@ primary database. The IP address is also remain same.
 
 ## Bring up db
 
-We will create ebs volume first, and use it as param for next command
+This bring up master, and automatically create EBS volume to store data. When the pod is destroy, the data on EBS volume
+remains.
 
 ```
-make ebs # note volume id
-make db EBS_VOLUME=[volume-id-from-above]
+$ make db
+$ kubectl get pv # check ebs volume status
+pvc-8d3ea83b-7f9a-11e7-ba1e-028c050a0436   1Gi        RWO           Delete          Bound     default/data-mysql-0             gp2                      4h
 ```
 
 Once the pod are ready, we can connect to its MySQL shell:
 
 ```
-make mysql_shell
+$ make mysql_shell
+kubectl run --image=mysql:5.7 -i -t --rm --restart=Never cli -- mysql -h 100.71.164.136
+If you don't see a command prompt, try pressing enter.
+
+mysql> select @@hostname;
++-------------------+
+| @@hostname        |
++-------------------+
+| mysql-0 |
++-------------------+
+1 row in set (0.00 sec)
 ```
 
 ## Upgrade process
@@ -163,25 +175,62 @@ make mysql_shell
 1. Bring up slave
 
    ```
-   mak ebs # note volume id or we can re-use any existing volume id
-   make secondary_db EBS_VOLUME=[ebs-volume-id]
-   # Manually connect to this pod and setup replication.
-   # We can do some more work do automate this further without human intervention
-   # Ideally, we can use mysqldump to backup data, find the MASTER_LOG_POS from dump file
-   # then import data into this new slave pod, and issue change master command from above MASTER_LOG_POS
-   # CHANGE MASTER TO MASTER_HOST='USING_SERVICE_IP_ADDRESS',MASTER_USER='replicant',MASTER_PASSWORD='<<slave-server-password>>', MASTER_LOG_FILE='<<value from dump file>>', MASTER_LOG_POS=<<value from dump file>>;
-   # START_SLAVE'
+   $ make secondary_db
+   # We can watch it status
+	 $ kubectl get pods mysql-secondary-0
+		 NAME                READY     STATUS     RESTARTS   AGE
+		 mysql-secondary-0   0/1       Init:0/1   0          13s
+	 $ kubectl get pods mysql-secondary-0
+		 NAME                READY     STATUS    RESTARTS   AGE
+		 mysql-secondary-0   1/1       Running   0          58s
+  	```
+
+2. Setup replication on secondary db
+
+It's possible to automate this process but for now, we do it manually. We also
+skip initialize steps to dumb data and sync to master.
+
+	 ```
+	 $ kubectl get pods | grep mysql
+		 mysql-0                                   1/1       Running   0          48m
+		 mysql-secondary-0                         1/1       Running   0          8m
+   # Ensure both are in running state
+   $ make config_slave # this will setup replication for secondary StatefulSet
    ```
 
-2. Switch Over
+Wait until slave keep up with master (second_behind_master=0) and has no replication error.
 
-This is the amount of time we are down
+3. Switch Over
+
+This is when downtime happen. We need to stop the app or put it into READ-ONLY mode
+Then promote slave to master and switch mysql service selector to the label of 
+secondary StatefulSet
 
 		```
-		# 1. Stop the app or put it into READ-ONLY mode
-    # Promote slave to master and switch mysql selector to the slave(new master) StatefulSet
-    make promote_db
+    $ make promote_db
 		```
 
 The migration process is finished. Downtime is the amount of time to promoting and change selector. Which is usually
 a few seconds.
+
+We can check the selector of mysql service now
+
+		```
+	  $ kubectl describe services mysql
+    ```
+
+We can verify if new node as well:
+
+		```
+		make mysql_shell
+		kubectl run --image=mysql:5.7 -i -t --rm --restart=Never cli -- mysql -h 100.71.164.136
+		If you don't see a command prompt, try pressing enter.
+
+		mysql> select @@hostname;
+		+-------------------+
+		| @@hostname        |
+		+-------------------+
+		| mysql-secondary-0 |
+		+-------------------+
+		1 row in set (0.00 sec)
+		```

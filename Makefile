@@ -90,15 +90,21 @@ switch:
   endif
 	@kubectl apply -f .deploy/nginx-service.yaml 2>/dev/null
 
-.PHONY: db
+# bring up master
 db:
 	kubectl create -f specs/database/mysql.yml 2>/dev/null || true
 	@sleep 3
 	kubectl get services | grep -q mysql
 	kubectl create -f specs/database/mysql-master.yml
 
+# bring up slave
 secondary_db:
 	kubectl create -f specs/database/mysql-secondary.yml
+config_secondary:
+	$(eval MASTER := $(shell kubectl get services mysql-secondary | tail -n1 | awk '{print $$2}'))
+	$(eval FILE :=   $(shell kubectl exec -it mysql-0 -- mysql -e 'show master status\G;' | head -n2 | tail -n1 | awk '{print $$2}'))
+	$(eval POS :=    $(shell kubectl exec -it mysql-0 -- mysql -e 'show master status\G;' | head -n3 | tail -n1 | awk '{print $$2}'))
+	kubectl exec -it mysql-secondary-0 -- mysql -h 127.0.0.1 -e "STOP SLAVE; CHANGE MASTER TO MASTER_HOST='$(MASTER)', MASTER_LOG_FILE='$(FILE)', MASTER_LOG_POS=$(POS), MASTER_USER='root', MASTER_PASSWORD=''; START SLAVE; SHOW SLAVE STATUS \G;"
 
 # Promote pod into master
 # Change labl
@@ -112,5 +118,8 @@ shell:
 	kubectl run -it --rm shell --image busybox  --restart=Never -- sh
 mysql_shell:
 	$(eval MYSQL_HOST := $(shell kubectl get services mysql | tail -n1 | awk '{print $$2}'))
+	kubectl run --image=mysql:5.7 -i -t --rm --restart=Never cli -- mysql -h $(MYSQL_HOST)
+secondary_shell:
+	$(eval MYSQL_HOST := $(shell kubectl get services mysql-secondary | tail -n1 | awk '{print $$2}'))
 	kubectl run --image=mysql:5.7 -i -t --rm --restart=Never cli -- mysql -h $(MYSQL_HOST)
 

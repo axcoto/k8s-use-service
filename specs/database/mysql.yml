@@ -7,10 +7,9 @@ metadata:
   labels:
     app: mysql
 data:
-  master.cnf: |
+  custom.cnf: |
     # Apply this config only on the master.
     [mysqld]
-    server-id=1
     binlog-format   = mixed
     log-bin=mysql-bin
     datadir=/var/lib/mysql
